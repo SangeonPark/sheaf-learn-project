@@ -1,0 +1,18 @@
+wandb_version: 1
+
+batch_size:
+  value: 60
+channels:
+  value: 5
+de:
+  value: 3
+dropout:
+  value: 0.7739616371432232
+dv:
+  value: 5
+input_dropout:
+  value: 0.8889789421305231
+layers:
+  value: 7
+learning_rate:
+  value: 0.01

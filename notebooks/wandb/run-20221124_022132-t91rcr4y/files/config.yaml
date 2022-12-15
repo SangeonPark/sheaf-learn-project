@@ -1,0 +1,123 @@
+wandb_version: 1
+
+Ne:
+  desc: null
+  value: 3
+Nv:
+  desc: null
+  value: 5
+_wandb:
+  desc: null
+  value:
+    cli_version: 0.13.5
+    framework: lightning
+    is_jupyter_run: true
+    is_kaggle_kernel: false
+    m:
+    - 1: trainer/global_step
+      6:
+      - 3
+    - 1: train_loss
+      5: 1
+      6:
+      - 1
+    - 1: train_dirichlet
+      5: 1
+      6:
+      - 1
+    - 1: train_conn
+      5: 1
+      6:
+      - 1
+    - 1: train_sparse
+      5: 1
+      6:
+      - 1
+    - 1: epoch
+      5: 1
+      6:
+      - 1
+    - 1: val_loss
+      5: 1
+      6:
+      - 1
+    - 1: val_dirichlet
+      5: 1
+      6:
+      - 1
+    - 1: val_conn
+      5: 1
+      6:
+      - 1
+    - 1: val_sparse
+      5: 1
+      6:
+      - 1
+    python_version: 3.10.8
+    start_time: 1669256492.597375
+    t:
+      1:
+      - 1
+      - 9
+      - 55
+      - 77
+      2:
+      - 1
+      - 9
+      - 55
+      - 77
+      3:
+      - 2
+      - 7
+      - 23
+      4: 3.10.8
+      5: 0.13.5
+      8:
+      - 1
+      - 5
+alpha:
+  desc: null
+  value: 0.1
+beta:
+  desc: null
+  value: 0.1
+de:
+  desc: null
+  value: 1
+dv:
+  desc: null
+  value: 1
+graph:
+  desc: null
+  value: Graph with 5 nodes and 3 edges
+learning_rate:
+  desc: null
+  value: 0.0001
+true_sheaf:
+  desc: null
+  value:
+  - - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+  - - 0.0
+    - 0.3360740152973721
+    - 0.0
+    - 0.1927554792270594
+    - 0.2847311152956652
+  - - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+  - - 0.0
+    - 0.1927554792270594
+    - 0.0
+    - 4.093657252004569
+    - 1.474766039935737
+  - - 0.0
+    - 0.2847311152956652
+    - 0.0
+    - 1.474766039935737
+    - 1.000812549791014

@@ -1,0 +1,22 @@
+wandb_version: 1
+
+batch_size:
+  value: 60
+channels:
+  value: 3
+de:
+  value: 4
+dropout:
+  value: 0.14015360066523402
+dv:
+  value: 2
+first_hidden:
+  value: 100
+free_potential:
+  value: false
+input_dropout:
+  value: 0.8240765778342402
+layers:
+  value: 3
+second_hidden:
+  value: 1000

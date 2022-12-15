@@ -1,0 +1,124 @@
+{
+    "os": "Linux-5.4.0-1079-kvm-x86_64-with-glibc2.31",
+    "python": "3.10.8",
+    "heartbeatAt": "2022-12-03T20:14:07.220172",
+    "startedAt": "2022-12-03T20:14:05.431094",
+    "docker": null,
+    "cuda": null,
+    "args": null,
+    "state": "running",
+    "program": "sheaf-learn-project/notebooks/sheaf_gradient_flow.ipynb",
+    "root": "/root/projects/sheaf-learn-project",
+    "git": {
+        "remote": "https://github.com/SangeonPark/sheaf-learn-project.git",
+        "commit": "b4f0aba4373286c692cb2f47999f0ebe6c4a7dbf"
+    },
+    "email": null,
+    "host": "ubuntu",
+    "username": "root",
+    "executable": "/root/miniconda3/envs/sheaflearn/bin/python",
+    "cpu_count": 16,
+    "cpu_count_logical": 16,
+    "cpu_freq": {
+        "current": 1999.999,
+        "min": 0.0,
+        "max": 0.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 1999.999,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 1999.999,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 1999.999,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 1999.999,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 1999.999,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 1999.999,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 1999.999,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 1999.999,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 1999.999,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 1999.999,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 1999.999,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 1999.999,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 1999.999,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 1999.999,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 1999.999,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 1999.999,
+            "min": 0.0,
+            "max": 0.0
+        }
+    ],
+    "disk": {
+        "total": 2422.7519340515137,
+        "used": 30.6549072265625
+    },
+    "gpu": "NVIDIA A100-PCIE-40GB",
+    "gpu_count": 1,
+    "gpu_devices": [
+        {
+            "name": "NVIDIA A100-PCIE-40GB",
+            "memory_total": 42949672960
+        }
+    ],
+    "memory": {
+        "total": 114.4164810180664
+    }
+}
