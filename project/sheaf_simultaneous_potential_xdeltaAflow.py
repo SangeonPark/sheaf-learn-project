@@ -82,7 +82,7 @@ class sheaf_gradient_flow_potential_xdeltaA(pl.LightningModule):
         self.lin_left_weights  = nn.ModuleList()
         self.lin_right_weights = nn.ModuleList()
 
-        self.potential = nn.Parameter(torch.zeros(self.Ne), requires_grad=True)
+        self.potential = nn.Parameter(torch.randn(self.Ne), requires_grad=True)
         
         self.batch_norms = nn.ModuleList()
         if self.right_weights:
@@ -241,10 +241,13 @@ class sheaf_gradient_flow_potential_xdeltaA(pl.LightningModule):
 
         #coboundary = coboundary.to_sparse()
         coboundary = coboundary.to(batch)
+        #print(self.potential)
         if self.free_potential == False:
             #potential_blocks = [torch.diag(1+self.potential[i].to(batch)*torch.ones(self.de).to(batch)) for i in range(self.Ne)]
-            #torch.tanh(self.epsilons[layer]).tile(self.graph_size, 1)
-            potential_blocks = [torch.diag((1+torch.tanh(self.potential[i])).to(batch)*torch.ones(self.de).to(batch)) for i in range(self.Ne)]
+            potential_blocks = [torch.diag((torch.FloatTensor(1).uniform_(1, 1.01).to(batch)+torch.tanh(self.potential[i])).to(batch)*torch.ones(self.de).to(batch)) for i in range(self.Ne)]
+            eps = torch.FloatTensor(self.dv * self.Nv).uniform_(1, 1.01).to(batch)
+            #potential_blocks = [torch.diag((self.potential[i]*self.potential[i]).to(batch)*torch.ones(self.de).to(batch)) for i in range(self.Ne)]
+            #potential_blocks = [torch.diag((torch.sigmoid(self.potential[i])).to(batch)*torch.ones(self.de).to(batch)) for i in range(self.Ne)]
         if self.free_potential == True:
             potential_blocks = [torch.diag(self.potential[i].to(batch)*torch.ones(self.de).to(batch)) for i in range(self.Ne)]
         potential_matrix = torch.block_diag(*potential_blocks)
@@ -252,7 +255,7 @@ class sheaf_gradient_flow_potential_xdeltaA(pl.LightningModule):
         potential_times_coboundary = torch.matmul(potential_matrix, coboundary).to(batch)
         sheaf_laplacian = torch.matmul(coboundary.t(), potential_times_coboundary).to(batch)
         if stage == 'train' and self.perturb_diagonal == True:
-            eps = torch.FloatTensor(self.dv * self.Nv).uniform_(-0.0001, 0.0001).to(batch)
+            eps = torch.FloatTensor(self.dv * self.Nv).uniform_(-0.001, 0.001).to(batch)
             eps.requires_grad = False
             lap_add_diagonal = torch.diag(1.+eps)
                 #lap_add_diagonal = torch.eye(self.dv * self.Nv).to(x_diffusion)

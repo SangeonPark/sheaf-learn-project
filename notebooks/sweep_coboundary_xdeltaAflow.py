@@ -1,0 +1,105 @@
+import os
+
+import torch
+import torch.nn.functional as F
+from torch.utils.data import DataLoader, random_split
+import torch.nn as nn
+import torch.optim as optim
+
+from torch_geometric.utils import from_networkx, to_networkx
+
+
+import pytorch_lightning as pl
+from pytorch_lightning import LightningDataModule, LightningModule, Trainer
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+from pytorch_lightning.callbacks import ModelCheckpoint, Callback, TQDMProgressBar
+from pytorch_lightning.loggers import WandbLogger
+
+
+
+from typing import Callable, Optional
+
+
+import sys
+sys.path.insert(0,'..')
+
+
+from utils.heterophilic import get_dataset, get_fixed_splits, WebKB, Actor
+from project.sheaf_datamodule import SheafDataset_ForGraphs, SheafDataModule_ForGraphs
+from project.sheaf_learner import coboundary_learner_on_graph_signal
+
+from project.sheaf_simultaneous_potential_xdeltaAflow import sheaf_gradient_flow_potential_xdeltaA
+import wandb
+
+wandb.login()
+
+dataset = get_dataset('texas')
+data_source = dataset[0]
+
+
+
+#sweep_id = wandb.sweep(sweep_config, project="Sweep_coboundary_xdeltaA_Dec_22_texas_fold0")
+
+
+class PrintCallbacks(Callback):
+    def on_init_start(self, trainer):
+        print("Starting to init trainer!")
+
+    def on_init_end(self, trainer):
+        print("Trainer is init now")
+
+    def on_train_end(self, trainer, pl_module):
+        print("Training ended")
+
+
+wandb.init()    # required to have access to `wandb.config`
+wandb_logger_diffusion = WandbLogger(project="Sweep_coboundary_xdeltaA_Dec_22_texas_fold0")
+early_stop_callback = EarlyStopping(monitor="val_acc", min_delta=0.000, patience=30, verbose=False, mode='max')
+path = '/root/projects/temp_checkpoints/xdeltaAflow_restrict_potential/texas_{wandb.config.fold}/dv{wandb.config.dv}-de{wandb.config.dv}-layers{wandb.config.layers}-channels{wandb.config.channels}-'
+isExist = os.path.exists(path)
+if not isExist:
+    os.makedirs(path)
+checkpoint_callback = ModelCheckpoint(
+    monitor="val_acc",
+    dirpath=path,
+    filename="test-potential-xdeltaAflow-{epoch:02d}-{val_loss:.2f}-{val_acc:.2f}",
+    save_top_k=10,
+    mode="max",
+)
+data = get_fixed_splits(data_source, 'texas', wandb.config.fold)
+graph = to_networkx(data)
+mask = {'train_mask':data.train_mask,
+    'val_mask':data.val_mask,
+    'test_mask':data.test_mask
+   }
+
+# setup data
+sheaf_dm = SheafDataModule_ForGraphs(data, wandb.config.batch_size , 1)
+
+# setup model - note how we refer to sweep parameters with wandb.config
+model_diffusion = sheaf_gradient_flow_potential_xdeltaA(graph, 183, wandb.config.dv, graph.number_of_edges(), wandb.config.de, wandb.config.layers, 1703,5, wandb.config.channels, wandb.config.left_weights, True, 'radial', mask, True,True,True,True, wandb.config.dropout,wandb.config.input_dropout,wandb.config.perturb_diagonal,wandb.config.free_potential, wandb.config.stalk_mixing, wandb.config.channel_mixing, wandb.config.learning_rate, wandb.config.weight_decay)
+
+
+
+#def __init__(self, graph, Nv, dv, Ne, de, layers, input_dim, output_dim, channels, left_weights, right_weights, potential, mask, use_act, augmented, add_lp, add_hp, dropout, input_dropout, perturb_diagonal, free_potential, stalk_mixing, channel_mixing, learning_rate = 0.01):
+
+
+#model_diffusion = sheaf_gradient_flow_potential(graph, 183, wandb.config.dv, graph.number_of_edges(), wandb.config.de, wandb.config.layers, 1703,5, wandb.config.channels, True, True, 'radial', mask, True,True,True,True, wandb.config.dropout,wandb.config.input_dropout, wandb.config.learning_rate)
+
+# setup Trainer
+#trainer = Trainer(accelerator='gpu',callbacks=[TQDMProgressBar(refresh_rate=10),PrintCallbacks(),early_stop_callback,checkpoint_callback],logger=wandb_logger_diffusion,auto_lr_find=True)
+trainer = Trainer(accelerator='gpu',callbacks=[TQDMProgressBar(refresh_rate=10),PrintCallbacks(),early_stop_callback,checkpoint_callback],logger=wandb_logger_diffusion)
+#lr_finder = trainer.tuner.lr_find(model_diffusion, sheaf_dm)
+#new_lr = lr_finder.suggestion()
+#model_diffusion.hparams.learning_rate = new_lr
+#model_diffusion.learning_rate = new_lr
+# train
+trainer.fit(model_diffusion, sheaf_dm)
+trainer.test(model_diffusion, sheaf_dm,ckpt_path='best')
+
+wandb.finis()
+
+
+#wandb.agent(sweep_id, function=sweep_iteration_0)
+
+
