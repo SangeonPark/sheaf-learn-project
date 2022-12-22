@@ -10,16 +10,19 @@ from torch_sparse import transpose, spmm, spspmm
 
 
 
-# Make Linear Backbone More complicated
-# For the Functor Case, Yes
 
-class sheaf_gradient_flow_functor(pl.LightningModule):
+
+class sheaf_gradient_flow_potential_xdeltaA(pl.LightningModule):
     """docstring for sheaf_diffusion"""
-    def __init__(self, graph, Nv, dv, Ne, de, layers, input_dim, output_dim, channels, left_weights, right_weights, potential, mask, use_act, augmented, add_lp, add_hp, dropout, input_dropout, free_potential, first_hidden, second_hidden, learning_rate = 0.01):
-        super(sheaf_gradient_flow_functor, self).__init__()
+    def __init__(self, graph, Nv, dv, Ne, de, layers, input_dim, output_dim, channels, left_weights, right_weights, potential, mask, use_act, augmented, add_lp, add_hp, dropout, input_dropout, perturb_diagonal, free_potential, stalk_mixing, channel_mixing, learning_rate = 0.01, weight_decay = 5e-4):
+        super(sheaf_gradient_flow_potential_xdeltaA, self).__init__()
         self.save_hyperparameters()
         self.learning_rate = learning_rate
+        self.weight_decay = weight_decay
+        self.perturb_diagonal = perturb_diagonal
         self.free_potential = free_potential
+        self.stalk_mixing = stalk_mixing
+        self.channel_mixing = channel_mixing
         self.graph  = graph
         self.layers = layers
         self.hidden_channels = channels
@@ -40,49 +43,20 @@ class sheaf_gradient_flow_functor(pl.LightningModule):
         # Copy weights from sheaf(coboundary) learner
         #self.register_buffer("sheaf_laplacian", sheaf_laplacian)
     
+        #MAKE NN BACKBONE MORE INTERESTING MLP
+        self.coboundary_vec_out = nn.ParameterList([nn.Parameter(torch.randn(de, dv)) for i in range(self.Ne)])
 
-        #self.coboundary_vec_out = nn.ParameterList([nn.Parameter(torch.randn(de, dv)) for i in range(self.Ne)])
-        ## Coboundary maps for vertex where edge is coming in
-        #self.coboundary_vec_in  = nn.ParameterList([nn.Parameter(torch.randn(de, dv)) for i in range(self.Ne)])
-        #for i in range(self.Ne):
-        #    nn.init.orthogonal_(self.coboundary_vec_in[i])
-        #    nn.init.orthogonal_(self.coboundary_vec_out[i])
-        #for i in range(self.Ne):
-        #    nn.init.normal_(self.coboundary_vec_out[i])
-        #    nn.init.normal_(self.coboundary_vec_in[i])
+        # Coboundary maps for vertex where edge is coming in
+        self.coboundary_vec_in  = nn.ParameterList([nn.Parameter(torch.randn(de, dv)) for i in range(self.Ne)])
+        for i in range(self.Ne):
+            nn.init.orthogonal_(self.coboundary_vec_in[i])
+            nn.init.orthogonal_(self.coboundary_vec_out[i])
 
-        # Linear Matrics
-        # Sheafification
-        #self.max_deg = max_deg
-        #self.adjacency = torch.tensor(adjacency, requires_grad=False)
-        
-        #compress = 100
-        #self.initial1 = nn.Linear(input_dim+self.Nv, 500)
-        #self.initial2 = nn.Linear(500, 500)
-        #self.initial3 = nn.Linear(500, 100)
-        #self.initial4 = nn.Linear(300, 100)
-        #self.initial5 = nn.Linear(100, 50)
-        #self.initial6 = nn.Linear(50, 10)
-        
-        #self.initial1 = nn.Linear(input_dim, 183)
-        #self.initial2 = nn.Linear(100, 100)
-        #self.initial3 = nn.Linear(100, compress)
-        
-        
-        self.graph_to_sheaf = nn.Linear(input_dim * 2, first_hidden)
-        self.graph_to_sheaf2  = nn.Linear(first_hidden, second_hidden)
-        self.graph_to_sheaf3  = nn.Linear(second_hidden, 2*(self.final_d*self.hidden_channels)+2*dv*de)
-        
-
-
-
-
-
-
-
-
-
-        
+        # Linear Matrics Stack more Layers
+        # APPEND ADJACENCY MATRIX TO IT 
+        self.graph_to_sheaf = nn.Linear(input_dim, self.final_d*channels)
+        self.graph_to_sheaf2  = nn.Linear(self.final_d*channels, self.final_d*channels)
+        self.graph_to_sheaf3  = nn.Linear(self.final_d*channels, self.final_d*channels)
         self.self_energy_channel_mixing = nn.Linear(channels, channels)
         self.self_energy_stalk_mixing   = nn.Linear(self.final_d, self.final_d)
         self.diffusion_stalk_mixing     = nn.Linear(self.final_d, self.final_d)
@@ -108,7 +82,7 @@ class sheaf_gradient_flow_functor(pl.LightningModule):
         self.lin_left_weights  = nn.ModuleList()
         self.lin_right_weights = nn.ModuleList()
 
-        self.potential = nn.Parameter(torch.randn(self.Ne), requires_grad=True)
+        self.potential = nn.Parameter(torch.zeros(self.Ne), requires_grad=True)
         
         self.batch_norms = nn.ModuleList()
         if self.right_weights:
@@ -124,7 +98,9 @@ class sheaf_gradient_flow_functor(pl.LightningModule):
         for i in range(self.layers):
             self.epsilons.append(nn.Parameter(torch.zeros((self.final_d, 1))))
 
-
+        for i in range(self.Ne):
+            nn.init.normal_(self.coboundary_vec_out[i])
+            nn.init.normal_(self.coboundary_vec_in[i])
         #self.lin1 = nn.Linear(self.input_dim, self.hidden_dim)
         #if self.second_linear:
         #    self.lin12 = nn.Linear(self.hidden_dim, self.hidden_dim)
@@ -159,6 +135,33 @@ class sheaf_gradient_flow_functor(pl.LightningModule):
     def forward(self, x):
         return self._common_step(x, None)
 
+    def normalize_coboundary(self, coboundary, add_diagonal):
+        laplacian = torch.matmul(coboundary.t(), coboundary)
+        diagonal_blocks = torch.FloatTensor(self.Nv, self.dv, self.dv).to(laplacian)
+        for i in range(self.Nv):
+            diagonal_blocks[i,0*self.dv:(1)*self.dv, 0*self.dv:(1)*self.dv] = laplacian[i*self.dv:(i+1)*self.dv, i*self.dv:(i+1)*self.dv] + add_diagonal[i*self.dv:(i+1)*self.dv, i*self.dv:(i+1)*self.dv]
+            
+        u, s, _ = torch.svd(diagonal_blocks)
+        vals = torch.flatten(s)
+        vecs = torch.block_diag(*u)
+        #diagonal_blocks = [laplacian[i*self.dv:(i+1)*self.dv, i*self.dv:(i+1)*self.dv] for i in range(self.Nv)]
+        #D = torch.block_diag(*diagonal_blocks)
+        #D = D + add_diagonal
+        #vecs, vals, _ = torch.linalg.svd(D)
+
+        #sorted, _ = torch.sort(vals)
+        #print("low: ",sorted[:10])
+        #print("high: ",sorted[-10:])
+        good = vals > vals.max(-1, True).values * vals.size(-1) * torch.finfo(vals.dtype).eps
+        vals = torch.abs(vals).pow(-0.5).where(good, torch.zeros((), device=laplacian.device, dtype=laplacian.dtype))
+        D_pow = (vecs * vals.unsqueeze(-2)) @ torch.transpose(vecs, -2, -1)
+
+        #evals, evecs = torch.linalg.eig(D)
+        #evpow = evals**(-1/2)
+        #D_pow = torch.matmul (evecs, torch.matmul (torch.diag (evpow), torch.inverse (evecs))).real
+
+        normalized_coboundary =  coboundary @ D_pow
+        return normalized_coboundary
 
 
     def normalize_laplacian(self, laplacian, add_diagonal):
@@ -184,8 +187,13 @@ class sheaf_gradient_flow_functor(pl.LightningModule):
         #evals, evecs = torch.linalg.eig(D)
         #evpow = evals**(-1/2)
         #D_pow = torch.matmul (evecs, torch.matmul (torch.diag (evpow), torch.inverse (evecs))).real
+        #print("dpow",D_pow.size())
+        #print("lap", laplacian.size())
+        normalized_laplacian = D_pow * laplacian * D_pow
 
-        normalized_laplacian = D_pow* laplacian * D_pow
+
+
+
         return normalized_laplacian
 
 
@@ -198,53 +206,21 @@ class sheaf_gradient_flow_functor(pl.LightningModule):
             training = False
         batch, _  = batch
         batch = F.dropout(batch, p=self.input_dropout, training=training)
-        batch = batch.reshape(self.Nv,-1)
+        
+        batch = self.graph_to_sheaf(batch)
+        batch = F.elu(batch)
+        batch = F.dropout(batch, p=self.dropout, training=training)
+        batch = self.graph_to_sheaf2(batch)
+        batch = F.elu(batch)
+        batch = F.dropout(batch, p=self.dropout, training=training)
+        batch = self.graph_to_sheaf3(batch)
         #print(batch.size())
-        
-        batch_vertex = torch.zeros((self.Nv, self.final_d*self.hidden_channels))
-        
-        restriction  = torch.zeros((self.Ne, 2, self.de, self.dv))
-        batch_vertex = batch_vertex.to(batch) 
-        restriction = restriction.to(batch) 
-        for i, (v1, v2) in enumerate(self.graph.edges):
-            edge = self.graph_to_sheaf(torch.cat((batch[v1], batch[v2])))
-            edge = F.elu(edge)
-            edge = F.dropout(edge, p=self.dropout, training=training)
-            edge = self.graph_to_sheaf2(edge)
-            edge = F.elu(edge)
-            edge = F.dropout(edge, p=self.dropout, training=training)
-            edge = self.graph_to_sheaf3(edge)
-            batch_vertex[v1] += edge[:self.final_d*self.hidden_channels]
-            batch_vertex[v2] += edge[self.final_d*self.hidden_channels:2*self.final_d*self.hidden_channels]
-            restrict_temp = edge[2*self.final_d*self.hidden_channels:].reshape(2,self.de,self.dv)
-            restriction[i] = restrict_temp
-            
-        #Averaging
-        for i in range(self.Nv):
-            batch_vertex[i] /= torch.tensor(self.graph.degree[i]).to(batch)
-        
-            
-            
-            
-       
-        
-            
-            
-        #print("reshaped to be linear:", batch.size())
- 
+        #print(self.hidden_dim, self.graph_size, self.final_d)
         #if self.use_act:
         #    x = F.elu(x)
         #batch = batch.view(-1, self.Nv * self.dv)
-        #batch_vertex     = batch[:, :self.Nv*self.hidden_dim]
-        #print("batch vertex:", batch_vertex.size())
-        #batch_coboundary = batch[:, self.Nv*self.hidden_dim:]
-        #print("batch coboundary:", batch_coboundary.size())
-        #print(self.hidden_dim, self.graph_size, self.final_d)
-        #batch_vertex = batch_vertex.reshape(self.graph_size * self.final_d, -1)
-        #2*Ne*dv*de
-        #batch_coboundary = batch_coboundary.reshape(self.Ne, 2, self.de, self.dv)
-        #print("batch vertex:", batch_vertex.size())
-        #print("batch coboundary:", batch_coboundary.size())
+        batch = batch.view(self.graph_size * self.final_d, -1)
+
         #x = F.dropout(x, p=self.input_dropout, training=self.training)
         #x = self.lin1(x)
         #if self.use_act:
@@ -254,10 +230,37 @@ class sheaf_gradient_flow_functor(pl.LightningModule):
       #  #if self.second_linear:
         #    x = self.lin12(x)
         #x = x.view(self.graph_size * self.final_d, -1)
-        #print(batch_vertex.size())
-        
-        x = batch_vertex.reshape(self.graph_size * self.final_d, -1)
+
+        x = batch
         x0 = x
+        coboundary = torch.zeros((self.Ne*self.de, self.Nv*self.dv))
+
+        for i, (v1, v2) in enumerate(self.graph.edges):
+            coboundary[self.de*i:self.de*(i+1),self.dv*v1:self.dv*(v1+1)] = 1. * self.coboundary_vec_out[i]
+            coboundary[self.de*i:self.de*(i+1),self.dv*v2:self.dv*(v2+1)] = -1.* self.coboundary_vec_in[i]
+
+        #coboundary = coboundary.to_sparse()
+        coboundary = coboundary.to(batch)
+        if self.free_potential == False:
+            #potential_blocks = [torch.diag(1+self.potential[i].to(batch)*torch.ones(self.de).to(batch)) for i in range(self.Ne)]
+            #torch.tanh(self.epsilons[layer]).tile(self.graph_size, 1)
+            potential_blocks = [torch.diag((1+torch.tanh(self.potential[i])).to(batch)*torch.ones(self.de).to(batch)) for i in range(self.Ne)]
+        if self.free_potential == True:
+            potential_blocks = [torch.diag(self.potential[i].to(batch)*torch.ones(self.de).to(batch)) for i in range(self.Ne)]
+        potential_matrix = torch.block_diag(*potential_blocks)
+        
+        potential_times_coboundary = torch.matmul(potential_matrix, coboundary).to(batch)
+        sheaf_laplacian = torch.matmul(coboundary.t(), potential_times_coboundary).to(batch)
+        if stage == 'train' and self.perturb_diagonal == True:
+            eps = torch.FloatTensor(self.dv * self.Nv).uniform_(-0.0001, 0.0001).to(batch)
+            eps.requires_grad = False
+            lap_add_diagonal = torch.diag(1.+eps)
+                #lap_add_diagonal = torch.eye(self.dv * self.Nv).to(x_diffusion)
+
+        else:
+            lap_add_diagonal = torch.eye(self.dv * self.Nv).to(batch)
+
+        sheaf_laplacian = self.normalize_laplacian(sheaf_laplacian, lap_add_diagonal)
         for layer in range(self.layers):
             #if layer == 0 or self.nonlinear:
             #    x_maps = F.dropout(x, p=self.dropout if layer > 0 else 0., training=self.training)
@@ -269,9 +272,12 @@ class sheaf_gradient_flow_functor(pl.LightningModule):
             x = F.dropout(x, p=self.dropout, training=training)
 
 
-
-            x_diffusion = self.left_right_linear(x, self.lin_left_weights[layer], self.lin_right_weights[layer])
-
+            if self.left_weights and self.right_weights:
+                x_diffusion = self.left_right_linear(x, self.lin_left_weights[layer], self.lin_right_weights[layer])
+            elif not self.left_weights and self.right_weights:
+                x_diffusion=self.lin_right_weights[layer](x)
+            else:
+                x_diffusion = x
 
             # Use the adjacency matrix rather than the diagonal
             #x = torch_sparse.spmm(L[0], L[1], x.size(0), x.size(0), x)
@@ -310,38 +316,20 @@ class sheaf_gradient_flow_functor(pl.LightningModule):
 
             #perturbation for the values
 
-            coboundary = torch.zeros((self.Ne*self.de, self.Nv*self.dv))
-
-            for i, (v1, v2) in enumerate(self.graph.edges):
-                coboundary[self.de*i:self.de*(i+1),self.dv*v1:self.dv*(v1+1)] = 1. * restriction[i,0,:,:]
-                coboundary[self.de*i:self.de*(i+1),self.dv*v2:self.dv*(v2+1)] = -1.* restriction[i,1,:,:]
-
-            #coboundary = coboundary.to_sparse()
-            coboundary = coboundary.to(x_diffusion)
-            if self.free_potential == False:
-                potential_blocks = [torch.diag(1+self.potential[i].to(x_diffusion)*torch.ones(self.de).to(x_diffusion)) for i in range(self.Ne)]
-            if self.free_potential == True:
-                potential_blocks = [torch.diag(self.potential[i].to(x_diffusion)*torch.ones(self.de).to(x_diffusion)) for i in range(self.Ne)]
-            potential_matrix = torch.block_diag(*potential_blocks).to(x_diffusion)
             
-            potential_times_coboundary = torch.matmul(potential_matrix, coboundary).to(x_diffusion)
-            sheaf_laplacian = torch.matmul(coboundary.t(), potential_times_coboundary).to(x_diffusion)
+            
+            
 
             #sheaf_laplacian = torch.sparse.mm(coboundary.t(),coboundary).to(x_diffusion)
 
 
 
-            if stage == 'train':
-                eps = torch.FloatTensor(self.dv * self.Nv).uniform_(-0.0001, 0.0001).to(x_diffusion)
-                eps.requires_grad = False
-                lap_add_diagonal = torch.diag(1.+eps)
-                #lap_add_diagonal = torch.eye(self.dv * self.Nv).to(x_diffusion)
+            
 
-            else:
-                lap_add_diagonal = torch.eye(self.dv * self.Nv).to(x_diffusion)
-
-            sheaf_laplacian = self.normalize_laplacian(sheaf_laplacian, lap_add_diagonal)
-
+            
+            
+            #potential_times_coboundary = torch.matmul(potential_matrix, coboundary).to(x_diffusion)
+            #sheaf_laplacian = torch.matmul(coboundary.t(), potential_times_coboundary).to(x_diffusion)
 
             if self.add_lp or self.add_hp:
                 if self.add_lp and self.add_hp:
@@ -399,7 +387,7 @@ class sheaf_gradient_flow_functor(pl.LightningModule):
 
                 sheaf_laplacian = new_sheaf_laplacian.to(x_diffusion)
 
-
+            x_mixed = x_diffusion
             x_diffusion = torch.matmul(sheaf_laplacian, x_diffusion)
 
 
@@ -421,18 +409,29 @@ class sheaf_gradient_flow_functor(pl.LightningModule):
 
             #x_diffusion = torch.matmul(sheaf_laplacian, x_diffusion)
             #x_diffusion = torch.sparse.mm(sheaf_laplacian, x_diffusion).to_dense()
+            x_update = x_diffusion
+            if self.stalk_mixing == True:
+                x_stalk_mixing   =  self.self_energy_stalk_mixing(x.reshape(-1, self.final_d)).reshape(-1, self.hidden_channels)           
+                x_update += x_stalk_mixing
+            if self.channel_mixing == True:
+                x_channel_mixing = self.self_energy_channel_mixing(x.reshape(-1, self.hidden_channels))
+                x_update += x_channel_mixing
+                
 
-            x_stalk_mixing   =  self.self_energy_stalk_mixing(x.reshape(-1, self.final_d)).reshape(-1, self.hidden_channels)
-            x_channel_mixing =  self.self_energy_channel_mixing(x.reshape(-1, self.hidden_channels))
 
-            x_update = x_diffusion - x_stalk_mixing - x_channel_mixing
             if self.use_act:
                 x_update = F.elu(x_update)
 
-            #print("x0 size:",x0.size())
-            #print("x_update size:", x_update.size())
-            x0 = (1 + torch.tanh(self.epsilons[layer]).tile(self.graph_size, 1)) * x0 + x_update
+            x0 = (1 + torch.tanh(self.epsilons[layer]).tile(self.graph_size, 1)) * x0 - x_update
+            lap_update = torch.matmul(x_mixed, x.t())
+            #print('sheaflaplacian', sheaf_laplacian.size())
+            #print('lapupdate', lap_update.size())
+            
+            if self.use_act:
+                lap_update = F.elu(lap_update)
+            sheaf_laplacian_new = (1 + torch.tanh(self.epsilons[layer]).tile(self.graph_size, 1)) *sheaf_laplacian - 0.5*lap_update
             x = x0
+            sheaf_laplacian = sheaf_laplacian_new
 
         # To detect the numerical instabilities of SVD.
         assert torch.all(torch.isfinite(x))
@@ -490,6 +489,6 @@ class sheaf_gradient_flow_functor(pl.LightningModule):
 
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
         return optimizer
 

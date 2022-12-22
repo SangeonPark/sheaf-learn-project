@@ -157,12 +157,7 @@ class sheaf_gradient_flow_potential(pl.LightningModule):
         #evpow = evals**(-1/2)
         #D_pow = torch.matmul (evecs, torch.matmul (torch.diag (evpow), torch.inverse (evecs))).real
 
-        normalized_laplacian = D_pow @ laplacian * D_pow
-
-
-
-
-        normalized_laplacian = D_pow @ laplacian * D_pow
+        normalized_laplacian = D_pow * laplacian * D_pow
         return normalized_laplacian
 
 
