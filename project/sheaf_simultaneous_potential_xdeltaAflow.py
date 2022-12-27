@@ -245,7 +245,7 @@ class sheaf_gradient_flow_potential_xdeltaA(pl.LightningModule):
         if self.free_potential == False:
             #potential_blocks = [torch.diag(1+self.potential[i].to(batch)*torch.ones(self.de).to(batch)) for i in range(self.Ne)]
             potential_blocks = [torch.diag((torch.FloatTensor(1).uniform_(1, 1.01).to(batch)+torch.tanh(self.potential[i])).to(batch)*torch.ones(self.de).to(batch)) for i in range(self.Ne)]
-            eps = torch.FloatTensor(self.dv * self.Nv).uniform_(1, 1.01).to(batch)
+            #eps = torch.FloatTensor(self.dv * self.Nv).uniform_(1, 1.01).to(batch)
             #potential_blocks = [torch.diag((self.potential[i]*self.potential[i]).to(batch)*torch.ones(self.de).to(batch)) for i in range(self.Ne)]
             #potential_blocks = [torch.diag((torch.sigmoid(self.potential[i])).to(batch)*torch.ones(self.de).to(batch)) for i in range(self.Ne)]
         if self.free_potential == True:

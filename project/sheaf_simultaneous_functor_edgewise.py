@@ -318,9 +318,12 @@ class sheaf_gradient_flow_functor(pl.LightningModule):
 
             #coboundary = coboundary.to_sparse()
             coboundary = coboundary.to(x_diffusion)
-            if self.free_potential == False:
+            if self.free_potential == 0:
+                #potential_blocks = [torch.diag(1+self.potential[i].to(x_diffusion)*torch.ones(self.de).to(x_diffusion)) for i in range(self.Ne)]
+                potential_blocks = [torch.diag((torch.FloatTensor(1).uniform_(1, 1.001).to(batch)+torch.tanh(self.potential[i])).to(batch)*torch.ones(self.de).to(batch)) for i in range(self.Ne)]
+            if self.free_potential == 1:
                 potential_blocks = [torch.diag(1+self.potential[i].to(x_diffusion)*torch.ones(self.de).to(x_diffusion)) for i in range(self.Ne)]
-            if self.free_potential == True:
+            if self.free_potential == 2:
                 potential_blocks = [torch.diag(self.potential[i].to(x_diffusion)*torch.ones(self.de).to(x_diffusion)) for i in range(self.Ne)]
             potential_matrix = torch.block_diag(*potential_blocks).to(x_diffusion)
             
