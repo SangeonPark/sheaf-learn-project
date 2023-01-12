@@ -10,13 +10,14 @@ import scipy.sparse as sp
 import os.path as osp
 
 from typing import Optional, Callable, List
-from torch_geometric.data import InMemoryDataset, Data
+from torch_geometric.data import InMemoryDataset, Data, download_url
 from torch_sparse import coalesce
 from torch_geometric.utils.undirected import to_undirected
 from torch_geometric.utils import remove_self_loops
 
 
 class Planetoid(InMemoryDataset):
+    url = 'https://raw.githubusercontent.com/graphdml-uiuc-jlu/geom-gcn/master'
 
     def __init__(self, root: str, name: str,
                  transform: Optional[Callable] = None,
@@ -40,14 +41,19 @@ class Planetoid(InMemoryDataset):
     @property
     def raw_file_names(self) -> List[str]:
         names = ['x', 'tx', 'allx', 'y', 'ty', 'ally', 'graph', 'test.index']
-        return [f'ind.{self.name.lower()}.{name}' for name in names]
+        return [f'ind.{self.name.lower()}.{name}' for name in names]+ [f'{self.name}_split_0.6_0.2_{i}.npz' for i in range(10)]
 
     @property
     def processed_file_names(self) -> str:
         return 'data.pt'
 
     def download(self):
-        pass
+        for f in self.raw_file_names[:8]:
+            print(f)
+            download_url(f'{self.url}/data/{f}', self.raw_dir)
+        for f in self.raw_file_names[2:]:
+            print(f)
+            download_url(f'{self.url}/splits/{f}', self.raw_dir)
 
     def process(self):
         data = full_load_citation(self.name, self.raw_dir)

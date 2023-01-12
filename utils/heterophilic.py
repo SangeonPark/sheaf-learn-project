@@ -4,6 +4,9 @@
 import torch
 import numpy as np
 import os.path as osp
+import os
+import sys
+sys.path.append("/root/projects/sheaf-learn-project") 
 import torch_geometric.transforms as T
 
 from typing import Optional, Callable, List, Union
@@ -12,9 +15,8 @@ from torch_geometric.data import InMemoryDataset, download_url, Data
 from torch_geometric.utils.undirected import to_undirected
 from torch_geometric.utils import remove_self_loops
 from utils.classic import Planetoid
-from definitions import ROOT_DIR
-
-
+#from definitions import ROOT_DIR
+ROOT_DIR = os.getcwd()
 class Actor(InMemoryDataset):
     r"""
     Code adapted from https://github.com/pyg-team/pytorch_geometric/blob/2.0.4/torch_geometric/datasets/actor.py
@@ -138,7 +140,9 @@ class WikipediaNetwork(InMemoryDataset):
             being saved to disk. (default: :obj:`None`)
 
     """
-
+    raw_url = 'https://graphmining.ai/datasets/ptg/wiki'
+    processed_url = ('https://raw.githubusercontent.com/graphdml-uiuc-jlu/'
+                     'geom-gcn/f1fc0d14b3b019c562737240d06ec83b07d16a8f')
     def __init__(self, root: str, name: str,
                  transform: Optional[Callable] = None,
                  pre_transform: Optional[Callable] = None):
@@ -157,14 +161,20 @@ class WikipediaNetwork(InMemoryDataset):
 
     @property
     def raw_file_names(self) -> Union[str, List[str]]:
-        return ['out1_node_feature_label.txt', 'out1_graph_edges.txt']
+        return (['out1_node_feature_label.txt', 'out1_graph_edges.txt'] +
+                    [f'{self.name}_split_0.6_0.2_{i}.npz' for i in range(10)])
 
     @property
     def processed_file_names(self) -> str:
         return 'data.pt'
 
     def download(self):
-        pass
+        for filename in self.raw_file_names[:2]:
+                url = f'{self.processed_url}/new_data/{self.name}/{filename}'
+                download_url(url, self.raw_dir)
+        for filename in self.raw_file_names[2:]:
+                url = f'{self.processed_url}/splits/{filename}'
+                download_url(url, self.raw_dir)
 
     def process(self):
         with open(self.raw_paths[0], 'r') as f:
