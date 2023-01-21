@@ -79,6 +79,15 @@ class sheaf_gradient_flow_functor(pl.LightningModule):
         self.augmented = augmented
         self.add_lp    = add_lp
         self.add_hp    = add_hp
+
+
+
+        self.norm = []
+        self.vertexquadratic = []
+        self.dirichletenergy = []
+        self.edgequadratic = []
+        self.vertexquadratic_trace = []
+        self.edgequadratic_trace = []
         # Linear Matrics
         # Sheafification
         #self.max_deg = max_deg
@@ -284,7 +293,7 @@ class sheaf_gradient_flow_functor(pl.LightningModule):
         self.relative_contribution_of_energies = nn.ParameterList()
         for i in range(self.layers):
             self.epsilons.append(nn.Parameter(torch.zeros((self.final_d, 1))))
-            self.relative_contribution_of_energies.append(nn.Parameter(torch.zeros(self.NEdgeEnergy+self.NVertEnergy+2+1),requires_grad=True))
+            self.relative_contribution_of_energies.append(nn.Parameter(torch.zeros(self.NEdgeEnergy+self.NVertEnergy+2+1),requires_grad=False))
 
 
         #self.lin1 = nn.Linear(self.input_dim, self.hidden_dim)
@@ -478,12 +487,49 @@ class sheaf_gradient_flow_functor(pl.LightningModule):
         for j in range(self.NEdgeEnergy):
             D_pow_list.append(self.get_D_matrix(diagonal_normalizer[j], lap_add_diagonal))
 
+
+        if stage=='predict':
+            dirichlet_diagonal = torch.zeros((self.Nv, self.dv, self.dv)).to(batch)
+            for i in range(self.Nv):
+                dummy1 = self.from_vertex_outgoing_edges[i].unsqueeze(1).unsqueeze(2).expand(self.from_vertex_outgoing_edges[i].size(0), self.dv, self.dv)
+                dummy2 = self.from_vertex_incoming_edges[i].unsqueeze(1).unsqueeze(2).expand(self.from_vertex_incoming_edges[i].size(0), self.dv, self.dv)
+                dirichlet_diagonal[i] = torch.sum(self_11_template[0].gather(0, dummy1), 0) + torch.sum(self_22_template[0].gather(0, dummy2), 0)
+
+            dirichlet_norms = self.get_D_matrix(dirichlet_diagonal, torch.eye(self.dv).to(batch))
+
+
         x = batch_vertex.reshape(self.graph_size * self.final_d, -1)
 
         for layer in range(self.layers):
 
             #x = F.dropout(x, p=self.dropout, training=training)
             x = F.dropout(x, p=self.dropout, training=training)
+            if stage=='predict':
+                self.norm.append(torch.square(torch.norm(x)).item())
+
+                x_laplace = x.reshape(self.graph_size, self.final_d, self.hidden_channels)
+                x_laplace_update = torch.zeros((self.Nv, self.final_d, self.hidden_channels)).to(batch)
+                for i in range(self.Nv):
+                    selfsum = torch.matmul( torch.matmul(torch.matmul(dirichlet_norms[i], dirichlet_diagonal[i]), dirichlet_norms[i])  , x_laplace[i][:-2] )
+                    selfsum = F.pad(selfsum,(0,0,0,2))
+                    x_laplace_update[i] += selfsum
+                    if(len(self.from_vertex_outgoing_vertex[i])>0):
+                        dummy1 = self.from_vertex_outgoing_edges[i].unsqueeze(1).unsqueeze(2).expand(self.from_vertex_outgoing_edges[i].size(0), self.dv, self.dv)
+                        x_otherside_outgoingedge = x_laplace[self.from_vertex_outgoing_vertex[i]]
+
+                        crosssum_outgoingedges = torch.matmul(F.pad(torch.matmul(torch.matmul(dirichlet_norms[i].unsqueeze(0).repeat(len(self.from_vertex_outgoing_vertex[i]),1,1), cross_12_template[0].gather(0, dummy1)), dirichlet_norms[self.from_vertex_outgoing_vertex[i]]),(0,2,0,2)),x_otherside_outgoingedge)
+                        x_laplace_update[i] += torch.sum(crosssum_outgoingedges, dim=0)
+
+
+                    if(len(self.from_vertex_incoming_vertex[i])>0):
+                        x_otherside_incomingedge = x_laplace[self.from_vertex_incoming_vertex[i]]
+                        dummy2 = self.from_vertex_incoming_edges[i].unsqueeze(1).unsqueeze(2).expand(self.from_vertex_incoming_edges[i].size(0), self.dv, self.dv)
+                        crosssum_incomingedges = torch.matmul(F.pad(torch.matmul(torch.matmul(dirichlet_norms[i].unsqueeze(0).repeat(len(self.from_vertex_incoming_vertex[i]),1,1), cross_21_template[0].gather(0, dummy2)), dirichlet_norms[self.from_vertex_incoming_vertex[i]]),(0,2,0,2)),x_otherside_incomingedge)
+                        x_laplace_update[i] += torch.sum(crosssum_incomingedges, dim=0)
+
+
+                self.dirichletenergy.append(torch.inner(torch.squeeze(x.reshape(-1, 1)), torch.squeeze(x_laplace_update.reshape(-1, 1))).item())
+
 
 
             #For x1
@@ -508,7 +554,8 @@ class sheaf_gradient_flow_functor(pl.LightningModule):
                 if self.vertex_potential_type == 1:
                     x_vertex_update[j] = (self.vertex_potential[j]).tile(self.final_d,1).reshape(self.graph_size*self.final_d, 1) * x_vertex_feats
                 if self.vertex_potential_type == 0:
-                    x_vertex_update[j] = (1+torch.tanh(self.vertex_potential[j])).tile(self.final_d,1).reshape(self.graph_size*self.final_d, 1) * x_vertex_feats
+                    maxelement = torch.max(1+torch.tanh(self.vertex_potential[j]))
+                    x_vertex_update[j] = ((1+torch.tanh(self.vertex_potential[j]))/maxelement).tile(self.final_d,1).reshape(self.graph_size*self.final_d, 1) * x_vertex_feats
 
             x_edge_update = torch.zeros(self.NEdgeEnergy, self.graph_size*self.final_d, self.hidden_channels).to(x)
 
@@ -571,7 +618,7 @@ class sheaf_gradient_flow_functor(pl.LightningModule):
             normalizer = torch.zeros(1).to(x)
             if self.NEdgeEnergy > 0:
                 normalizer += torch.sum(pos_restricted_weighting[:self.NEdgeEnergy])
-                x_edge_update_sum *= 0.5
+                #x_edge_update_sum *= 1
                 x_update_sum += x_edge_update_sum
             if self.NVertEnergy > 0:
                 normalizer += torch.sum(pos_restricted_weighting[self.NEdgeEnergy:self.NEdgeEnergy+self.NVertEnergy])
@@ -591,8 +638,11 @@ class sheaf_gradient_flow_functor(pl.LightningModule):
                 x_update_sum += x_channel_mixing
 
 
-
-
+            if stage=='predict':
+                self.edgequadratic.append(((1./normalizer)*torch.inner(torch.squeeze(x.reshape(-1, 1)),torch.squeeze(x_edge_update_sum.reshape(-1, 1)))).item())
+                self.vertexquadratic.append(((1./normalizer)*torch.inner(torch.squeeze(x.reshape(-1, 1)),torch.squeeze(x_vertex_update_sum.reshape(-1, 1)))).item())
+                self.edgequadratic_trace.append(((1./normalizer)*torch.trace(x.t()@x_edge_update_sum)).item())
+                self.vertexquadratic_trace.append(((1./normalizer)*torch.trace(x.t()@x_vertex_update_sum)).item())
             #final_out_sum = torch.sum(pos_restricted)
             x_update = (1./normalizer)*(x_update_sum)
 
@@ -608,7 +658,7 @@ class sheaf_gradient_flow_functor(pl.LightningModule):
             #x0 = (1 + torch.tanh(self.epsilons[layer]).tile(self.graph_size, 1)) * x0 - x_update
             #x = x0
             #x = (1 + torch.tanh(self.epsilons[layer]).tile(self.graph_size, 1)) * x - x_update
-            x = (1 + torch.tanh(self.epsilons[layer]).tile(self.graph_size, 1)) * x - x_update
+            x = x - x_update
 
             #x0 = x0 - x0_update
             #x1 = x1 - x1_update
@@ -670,7 +720,7 @@ class sheaf_gradient_flow_functor(pl.LightningModule):
         else:
             self.log_dict({"max_test_acc": self.maxa})
         self.log_dict({"test_loss": loss, "test_acc":acc})
-        
+
         out = self._common_step(batch, batch_idx, "val")[self.mask['val_mask']]
         _, y = batch
         nll = F.nll_loss(out, y[0][self.mask['val_mask']])
@@ -694,8 +744,15 @@ class sheaf_gradient_flow_functor(pl.LightningModule):
 
 
 
-    def predict_step(self):
-        return None
+    def predict_step(self, batch, batch_idx):
+        out = self._common_step(batch, batch_idx, "predict")[self.mask['test_mask']]
+        _, y = batch
+        nll = F.nll_loss(out, y[0][self.mask['test_mask']])
+        loss = nll
+        pred = out.max(1)[1]
+        acc = pred.eq(y[0][self.mask['test_mask']]).sum().item() / self.mask['test_mask'].sum().item()
+        #self.log_dict({"test_loss": loss, "test_acc":acc})
+        return loss
 
 
     def configure_optimizers(self):
