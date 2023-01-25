@@ -503,10 +503,11 @@ class sheaf_gradient_flow_functor(pl.LightningModule):
             x_vertex_update = torch.zeros(self.NVertEnergy, self.graph_size*self.final_d, self.hidden_channels).to(x)
             for j in range(self.NVertEnergy):
                 x_vertex_feats = self.left_right_linear(x, self.vertex_lin_left_weights[layer][j], self.vertex_lin_right_weights[layer][j])
-                #maxelement = torch.max(torch.abs(self.vertex_potential[j]))
+                #final try
+                maxelement = torch.max(torch.abs(self.vertex_potential[j]))
                 #x_vertex_update[j] = (self.vertex_potential[j]/maxelement).tile(self.final_d,1).reshape(self.graph_size*self.final_d, 1) * x_vertex_feats
                 if self.vertex_potential_type == 1:
-                    x_vertex_update[j] = (self.vertex_potential[j]).tile(self.final_d,1).reshape(self.graph_size*self.final_d, 1) * x_vertex_feats
+                    x_vertex_update[j] = (self.vertex_potential[j]/maxelement).tile(self.final_d,1).reshape(self.graph_size*self.final_d, 1) * x_vertex_feats
                 if self.vertex_potential_type == 0:
                     x_vertex_update[j] = (1+torch.tanh(self.vertex_potential[j])).tile(self.final_d,1).reshape(self.graph_size*self.final_d, 1) * x_vertex_feats
 
@@ -571,7 +572,8 @@ class sheaf_gradient_flow_functor(pl.LightningModule):
             normalizer = torch.zeros(1).to(x)
             if self.NEdgeEnergy > 0:
                 normalizer += torch.sum(pos_restricted_weighting[:self.NEdgeEnergy])
-                x_edge_update_sum *= 0.5
+                #x_edge_update_sum *= 0.5
+                x_edge_update_sum *= 2
                 x_update_sum += x_edge_update_sum
             if self.NVertEnergy > 0:
                 normalizer += torch.sum(pos_restricted_weighting[self.NEdgeEnergy:self.NEdgeEnergy+self.NVertEnergy])
