@@ -573,7 +573,7 @@ class sheaf_gradient_flow_functor(pl.LightningModule):
             if self.NEdgeEnergy > 0:
                 normalizer += torch.sum(pos_restricted_weighting[:self.NEdgeEnergy])
                 #x_edge_update_sum *= 0.5
-                x_edge_update_sum *= 2
+                #x_edge_update_sum *= 1
                 x_update_sum += x_edge_update_sum
             if self.NVertEnergy > 0:
                 normalizer += torch.sum(pos_restricted_weighting[self.NEdgeEnergy:self.NEdgeEnergy+self.NVertEnergy])
